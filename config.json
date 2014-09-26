@@ -1,0 +1,14 @@
+{
+    "npm": {
+        "installCommand": "npm install",
+        "storageRoot": "/opt/packrat/",
+        "sourceFile": "package.json",
+        "directory": "node_modules"
+    },
+    "bower": {
+        "installCommand": "bower install --allow-root",
+        "storageRoot": "/opt/packrat/",
+        "sourceFile": "bower.json",
+        "directory": "bower_components"
+    }
+}

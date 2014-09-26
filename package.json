@@ -1,0 +1,20 @@
+{
+  "name": "packrat",
+  "version": "0.0.0",
+  "description": "",
+  "main": "packrat.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "packrat": "packrat-cli.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "coa": "^0.4.1",
+    "mkdirp": "^0.5.0",
+    "execSync": "^1.0.2",
+    "extend": "^1.3.0"
+  }
+}
