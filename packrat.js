@@ -5,6 +5,8 @@ var path = require('path'),
     sh = require('execSync');
 
 function Packrat(opts) {
+    this.force = opts.force;
+
     this.packageManager = opts.packageManager;
     this.installCommand = opts.installCommand;
     this.sourceFile = opts.sourceFile;
@@ -16,7 +18,7 @@ function Packrat(opts) {
     this.storageModulesPath = path.join(this.storagePath, this.sourceHash);
     this.storageLogPath = path.join(this.storagePath, 'install.log');
     this.storageImportCounterPath = path.join(this.storagePath, 'counter');
-    this.storageStatus = this.getStorageStatus();
+    this.setStorageStatus();
 
     this.installLog = '';
 
@@ -24,6 +26,11 @@ function Packrat(opts) {
 }
 
 Packrat.prototype.makeInstall = function() {
+    if (this.force) {
+        this.forceInstall();
+        return;
+    }
+
     switch (this.storageStatus) {
         case this.status.AWAIT :
             this.log(this.messages.AWAIT);
@@ -76,6 +83,14 @@ Packrat.prototype.makeInfo = function() {
     this.log();
 };
 
+Packrat.prototype.forceInstall = function() {
+    this.runCommand('rm -rf %s', this.packageDir);
+    this.makeClean();
+    this.setStorageStatus();
+
+    delete this.force;
+    this.makeInstall();
+};
 
 Packrat.prototype.realInstall = function() {
     this.log('\nUsual packages installing takes a while (as you already know). Please wait!..\n');
@@ -83,20 +98,20 @@ Packrat.prototype.realInstall = function() {
         this.runCommand(this.installCommand).stdout;
 };
 
-Packrat.prototype.getStorageStatus = function() {
+Packrat.prototype.setStorageStatus = function() {
     var stat;
 
     try {
         stat = fs.statSync(this.storagePath);
         if (stat.isFile()) {
-            return this.status.AWAIT;
+            this.storageStatus = this.status.AWAIT;
         }
         else if (stat.isDirectory()) {
-            return this.status.READY;
+            this.storageStatus = this.status.READY;
         }
     }
     catch(e) {
-        return this.status.EMPTY;
+        this.storageStatus = this.status.EMPTY;
     }
 };
 

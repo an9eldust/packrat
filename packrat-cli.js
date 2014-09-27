@@ -58,8 +58,9 @@ require('coa').Cmd()
 
         action = action[0].toUpperCase() + action.slice(1);
         packratConfig.packageManager = args.packageManager;
-        packrat = new Packrat(packratConfig);
+        packratConfig.force = opts.force;
 
+        packrat = new Packrat(packratConfig);
         packrat['make' + action]();
     })
     .run(process.argv.slice(2));
