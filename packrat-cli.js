@@ -2,15 +2,48 @@
 
 var Packrat = require('./packrat'),
     extend = require('extend'),
-    config = require('./config'),
     util = require('util'),
     fs = require('fs'),
-    rc;
+    config = require('./config'),
+    projectConfig,
+    availableManagers,
+    availableActions;
 
 try {
-    rc = JSON.parse(fs.readFileSync('.packratrc'));
+    projectConfig = JSON.parse(fs.readFileSync('.packratrc'));
 }
 catch (e) {}
+
+config = extend(true, config, projectConfig);
+availableManagers = Object.keys(config);
+availableActions = Object.keys(Packrat.prototype)
+    .filter(function(key) {
+        return typeof Packrat.prototype[key] === 'function';
+    })
+    .filter(function(methodName) {
+        return /^make/.test(methodName);
+    })
+    .map(function(methodName) {
+        return methodName.replace(/^make/, '').toLowerCase();
+    });
+
+function createArgTitle(message, args) {
+    var argsInMessage = args.map(function(arg, index) {
+        var prefix;
+
+        if (index === 0) {
+            prefix = ''
+        } else if (index + 1 !== args.length) {
+            prefix = ', ';
+        } else {
+            prefix = ' or ';
+        }
+
+        return prefix + '`' + arg + '`';
+    }).join('');
+
+    return util.format(message, argsInMessage);
+}
 
 require('coa').Cmd()
     .name(process.argv[1])
@@ -18,30 +51,23 @@ require('coa').Cmd()
     .helpful()
     .arg()
         .name('packageManager')
-        .title('Package manager; one of: npm or bower')
-        .val(function(value) {
-            if ([ 'npm', 'bower' ].indexOf(value) === -1) {
-                return this.reject('Package manager should be `npm` or `bower`');
+        .title(createArgTitle('Package manager; one of %s', availableManagers))
+        .val(function(manager) {
+            if (availableManagers.indexOf(manager) === -1) {
+                return this.reject(createArgTitle('Package manager should be one of %s', availableManagers));
             }
-            return value;
+            return manager;
         })
         .req()
         .end()
     .arg()
         .name('action')
-        .title('action')
-        .val(function(value) {
-            var availableActions = [ 'install', 'export', 'import', 'clean', 'info' ],
-                rejectMessageActions = availableActions.map(function(action) {
-                    return '`' + action + '`';
-                }).join(', '),
-                rejectMessage = util.format('Package manager action should be one of %s', rejectMessageActions);
-
-            if (availableActions.indexOf(value) === -1) {
-                return this.reject(rejectMessage);
+        .title(createArgTitle('Action; one of %s', availableActions))
+        .val(function(action) {
+            if (availableActions.indexOf(action) === -1) {
+                return this.reject(createArgTitle('Action should be one of %s', availableActions));
             }
-
-            return value;
+            return action;
         })
         .req()
         .end()
@@ -54,7 +80,7 @@ require('coa').Cmd()
     .act(function(opts, args) {
         var packrat,
             action = args.action,
-            packratConfig = extend(true, config, rc)[args.packageManager];
+            packratConfig = config[args.packageManager];
 
         action = action[0].toUpperCase() + action.slice(1);
         packratConfig.packageManager = args.packageManager;
