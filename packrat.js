@@ -171,7 +171,11 @@ Packrat.prototype.setStorageStatus = function() {
 Packrat.prototype.createSourceHash = function() {
     var hashSum = crypto.createHash('md5');
 
-    hashSum.update(fs.readFileSync(this.sourceFile, 'utf8'));
+    try {
+        hashSum.update(fs.readFileSync(this.sourceFile, 'utf8'));
+    } catch(e) {
+        this.onError(new Error(util.format('Source file `%s` does not exist', this.sourceFile)));
+    }
 
     return hashSum.digest('hex');
 };
