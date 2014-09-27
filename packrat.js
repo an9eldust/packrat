@@ -33,7 +33,7 @@ Packrat.prototype.makeInstall = function() {
 
     switch (this.storageStatus) {
         case this.status.AWAIT :
-            this.log(this.messages.AWAIT);
+            this.log(this.messages.AWAIT, this.sourceFile);
             this.realInstall();
             break;
 
@@ -47,11 +47,12 @@ Packrat.prototype.makeInstall = function() {
         case this.status.READY :
             this.log(this.messages.READY);
             this.makeImport();
+            break;
     }
 };
 
 Packrat.prototype.makeExport = function() {
-    this.runCommand('rm %s', this.storagePath);
+    this.runCommand('rm -f %s', this.storagePath);
     this.runCommand('mkdir -p', this.storagePath);
 
     this.runCommand('cp -Tr %s %s', this.packageDir, this.storageModulesPath);
@@ -63,7 +64,7 @@ Packrat.prototype.makeExport = function() {
 
 Packrat.prototype.makeImport = function() {
     this.runCommand('cp -Tr %s %s', this.storageModulesPath, this.packageDir);
-    this.runCommand('cat %s', this.storageLogPath);
+    this.runCommand('echo; cat %s', this.storageLogPath);
     this.updateImportCounter();
 };
 
@@ -137,7 +138,11 @@ Packrat.prototype.updateImportCounter = function() {
 };
 
 Packrat.prototype.getImportCounter = function() {
-    return fs.readFileSync(this.storageImportCounterPath, 'utf8');
+    try {
+        return fs.readFileSync(this.storageImportCounterPath, 'utf8');
+    } catch(e) {
+        return 'n/a';
+    }
 };
 
 
@@ -164,7 +169,7 @@ Packrat.prototype.runCommand = function() {
     }
 
     if (result.code !== 0) {
-        this.errClean();
+        this.onError();
         console.error('ERROR:', util.format('`%s` command failed', command));
         process.exit(result.code);
     }
