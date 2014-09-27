@@ -12,17 +12,20 @@ function Packrat(opts) {
     this.packageDir = opts.directory;
     this.sourceHash = this.createSourceHash();
     this.storagePath = path.join(this.storageRoot, this.packageManager, this.sourceHash);
+    this.storageModulesPath = path.join(this.storagePath, this.sourceHash);
+    this.storageLogPath = path.join(this.storagePath, 'install.log');
+    this.storageImportCounterPath = path.join(this.storagePath, 'counter');
+    this.installLog = '';
 
     this.catchExceptions();
 }
 
+/**
+ * @see Packrat#messages
+ */
 Packrat.prototype.status = {
-    // Someone has already started installing with the same parameters.
-    // We should just install packages
     'AWAIT': 'AWAIT',
-    // Storage is empty: we should install packages and then export installed to storage
     'EMPTY': 'EMPTY',
-    // Storage is ready to be imported; no install needed
     'READY': 'READY'
 };
 
@@ -89,16 +92,33 @@ Packrat.prototype.createTmpFile = function() {
 
 Packrat.prototype.realInstall = function() {
     this.log('Usual packages installing takes a while (which you already know). Please wait');
-    this.runCommand(this.installCommand);
+    this.installLog =
+        this.runCommand(this.installCommand).stdout;
 };
 
 Packrat.prototype.makeExport = function() {
     this.runCommand('rm %s', this.storagePath);
-    this.runCommand('cp -Tr %s %s', this.packageDir, this.storagePath);
+    this.runCommand('mkdir -p', this.storagePath);
+
+    this.runCommand('cp -Tr %s %s', this.packageDir, this.storageModulesPath);
+    this.runCommand('touch %s %s', this.storageImportCounterPath, this.storageLogPath);
+
+    fs.writeFileSync(this.storageImportCounterPath, '0');
+    fs.writeFileSync(this.storageLogPath, this.installLog);
 };
 
 Packrat.prototype.makeImport = function() {
-    this.runCommand('cp -Tr %s %s', this.storagePath, this.packageDir);
+    this.runCommand('cp -Tr %s %s', this.storageModulesPath, this.packageDir);
+    this.runCommand('cat %s', this.storageLogPath);
+    this.updateImportCounter();
+};
+
+Packrat.prototype.updateImportCounter = function() {
+    var counter = fs.readFileSync(this.storageImportCounterPath, 'utf8');
+
+    counter = parseInt(counter, 10) + 1;
+
+    fs.writeFileSync(this.storageImportCounterPath, String(counter));
 };
 
 Packrat.prototype.runCommand = function() {
@@ -124,10 +144,7 @@ Packrat.prototype.runCommand = function() {
 
 Packrat.prototype.errClean = function() {
     if (this.storageStatus === this.status.EMPTY) {
-        try {
-            fs.unlink(this.storagePath);
-        }
-        catch(e) {}
+        this.runCommand('rm %s', this.storagePath);
     }
 };
 
