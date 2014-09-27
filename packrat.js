@@ -8,39 +8,22 @@ function Packrat(opts) {
     this.packageManager = opts.packageManager;
     this.installCommand = opts.installCommand;
     this.sourceFile = opts.sourceFile;
-    this.storageRoot = opts.storageRoot;
     this.packageDir = opts.directory;
     this.sourceHash = this.createSourceHash();
+
+    this.storageRoot = opts.storageRoot;
     this.storagePath = path.join(this.storageRoot, this.packageManager, this.sourceHash);
     this.storageModulesPath = path.join(this.storagePath, this.sourceHash);
     this.storageLogPath = path.join(this.storagePath, 'install.log');
     this.storageImportCounterPath = path.join(this.storagePath, 'counter');
+    this.storageStatus = this.getStorageStatus();
+
     this.installLog = '';
 
-    this.catchExceptions();
+    process.on('uncaughtException', this.onError.bind(this));
 }
 
-/**
- * @see Packrat#messages
- */
-Packrat.prototype.status = {
-    'AWAIT': 'AWAIT',
-    'EMPTY': 'EMPTY',
-    'READY': 'READY'
-};
-
-Packrat.prototype.messages = {
-    AWAIT:  'Someone has already started installing with the same %s and is going to export.\n' +
-            'We should just install packages.',
-    EMPTY:  'Storage is empty: we will install packages the usual way' +
-            ' and then export installed to storage',
-    READY:  'Storage is ready to be imported.\n' +
-            'No install needed; we will just copy packages from storage to local directory.'
-};
-
 Packrat.prototype.makeInstall = function() {
-    this.storageStatus = this.checkStorage();
-
     switch (this.storageStatus) {
         case this.status.AWAIT :
             this.log(this.messages.AWAIT);
@@ -60,7 +43,47 @@ Packrat.prototype.makeInstall = function() {
     }
 };
 
-Packrat.prototype.checkStorage = function() {
+Packrat.prototype.makeExport = function() {
+    this.runCommand('rm %s', this.storagePath);
+    this.runCommand('mkdir -p', this.storagePath);
+
+    this.runCommand('cp -Tr %s %s', this.packageDir, this.storageModulesPath);
+    this.runCommand('touch %s %s', this.storageImportCounterPath, this.storageLogPath);
+
+    fs.writeFileSync(this.storageImportCounterPath, '0');
+    fs.writeFileSync(this.storageLogPath, this.installLog);
+};
+
+Packrat.prototype.makeImport = function() {
+    this.runCommand('cp -Tr %s %s', this.storageModulesPath, this.packageDir);
+    this.runCommand('cat %s', this.storageLogPath);
+    this.updateImportCounter();
+};
+
+Packrat.prototype.makeClean = function() {
+    this.log('Cleaning storage files...');
+    this.runCommand('rm -rf %s', this.storagePath);
+};
+
+Packrat.prototype.makeInfo = function() {
+    this.log();
+    this.log('Storage path:', this.storagePath);
+    this.log('Storage status:', this.storageStatus);
+    this.log('Times storage was imported:', this.getImportCounter());
+    this.log('Install command: `%s`', this.installCommand);
+    this.log('Local modules directory:', this.packageDir);
+    this.log('Package declaration file:', this.sourceFile);
+    this.log();
+};
+
+
+Packrat.prototype.realInstall = function() {
+    this.log('\nUsual packages installing takes a while (as you already know). Please wait!..\n');
+    this.installLog =
+        this.runCommand(this.installCommand).stdout;
+};
+
+Packrat.prototype.getStorageStatus = function() {
     var stat;
 
     try {
@@ -90,42 +113,34 @@ Packrat.prototype.createTmpFile = function() {
     this.runCommand('touch %s', this.storagePath);
 };
 
-Packrat.prototype.realInstall = function() {
-    this.log('Usual packages installing takes a while (which you already know). Please wait');
-    this.installLog =
-        this.runCommand(this.installCommand).stdout;
-};
-
-Packrat.prototype.makeExport = function() {
-    this.runCommand('rm %s', this.storagePath);
-    this.runCommand('mkdir -p', this.storagePath);
-
-    this.runCommand('cp -Tr %s %s', this.packageDir, this.storageModulesPath);
-    this.runCommand('touch %s %s', this.storageImportCounterPath, this.storageLogPath);
-
-    fs.writeFileSync(this.storageImportCounterPath, '0');
-    fs.writeFileSync(this.storageLogPath, this.installLog);
-};
-
-Packrat.prototype.makeImport = function() {
-    this.runCommand('cp -Tr %s %s', this.storageModulesPath, this.packageDir);
-    this.runCommand('cat %s', this.storageLogPath);
-    this.updateImportCounter();
-};
-
 Packrat.prototype.updateImportCounter = function() {
-    var counter = fs.readFileSync(this.storageImportCounterPath, 'utf8');
+    var counter = this.getImportCounter();
 
     counter = parseInt(counter, 10) + 1;
 
     fs.writeFileSync(this.storageImportCounterPath, String(counter));
 };
 
+Packrat.prototype.getImportCounter = function() {
+    return fs.readFileSync(this.storageImportCounterPath, 'utf8');
+};
+
+
+Packrat.prototype.onError = function(err) {
+    if (this.storageStatus === this.status.EMPTY) {
+        this.makeClean();
+    }
+
+    console.error('Packrat unexpected error:', err.message);
+    process.exit(1);
+};
+
+
 Packrat.prototype.runCommand = function() {
     var command = util.format.apply(util, arguments),
         result;
 
-    this.log('run command `%s`', command);
+    this.log('Packrat is running `%s`...', command);
 
     result = sh.exec(command, true);
 
@@ -142,22 +157,27 @@ Packrat.prototype.runCommand = function() {
     return result;
 };
 
-Packrat.prototype.errClean = function() {
-    if (this.storageStatus === this.status.EMPTY) {
-        this.runCommand('rm %s', this.storagePath);
-    }
-};
-
-Packrat.prototype.catchExceptions = function() {
-    process.on('uncaughtException', function (err) {
-        this.errClean();
-        console.error('Error:', err.message);
-        process.exit(1);
-    }.bind(this));
-};
-
 Packrat.prototype.log = function() {
     console.log.apply(console, arguments);
+};
+
+
+/**
+ * @see Packrat#messages
+ */
+Packrat.prototype.status = {
+    'AWAIT': 'AWAIT',
+    'EMPTY': 'EMPTY',
+    'READY': 'READY'
+};
+
+Packrat.prototype.messages = {
+    AWAIT:  'Someone has already started installing with the same %s and is going to export.\n' +
+            'We should just install packages.',
+    EMPTY:  'Storage is empty: we will install packages the usual way' +
+            ' and then export installed to storage',
+    READY:  'Storage is ready to be imported.\n' +
+            'No install needed; we will just copy packages from storage to local directory.'
 };
 
 module.exports = Packrat;

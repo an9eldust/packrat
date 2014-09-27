@@ -3,6 +3,7 @@
 var Packrat = require('./packrat'),
     extend = require('extend'),
     config = require('./config'),
+    util = require('util'),
     fs = require('fs'),
     rc;
 
@@ -30,9 +31,16 @@ require('coa').Cmd()
         .name('action')
         .title('action')
         .val(function(value) {
-            if ([ 'install' ].indexOf(value) === -1) {
-                return this.reject('Package manager action should be `install`');
+            var availableActions = [ 'install', 'export', 'import', 'clean', 'info' ],
+                rejectMessageActions = availableActions.map(function(action) {
+                    return '`' + action + '`';
+                }).join(', '),
+                rejectMessage = util.format('Package manager action should be one of %s', rejectMessageActions);
+
+            if (availableActions.indexOf(value) === -1) {
+                return this.reject(rejectMessage);
             }
+
             return value;
         })
         .req()
