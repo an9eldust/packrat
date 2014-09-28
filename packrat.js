@@ -16,12 +16,14 @@ var path = require('path'),
  * @param {String} opts.storageRoot Путь до корня кэш-хранилища
  * @param {Boolean} opts.force Флаг про то, использовать ли форсированную установку
  * (перед ней будут удалены кэш и локальная директория с пакетами)
+ * @param {Boolean} opts.verbose Флаг про вербозность
  * @constructor
  */
 function Packrat(opts) {
     process.on('uncaughtException', this.onError.bind(this));
 
     this.force = opts.force;
+    this.verbose = opts.verbose;
 
     this.packageManager = opts.packageManager;
     this.installCommand = opts.installCommand;
@@ -191,7 +193,9 @@ Packrat.prototype.runCommand = function() {
     var command = util.format.apply(util, arguments),
         result;
 
-    this.log('Packrat is running `%s`...', command);
+    if (this.verbose) {
+        this.log('Packrat is running `%s`...', command);
+    }
 
     result = sh.exec(command, true);
 
