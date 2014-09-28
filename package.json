@@ -1,7 +1,7 @@
 {
   "name": "packrat",
   "version": "0.0.0",
-  "description": "",
+  "description": "Makes installations with package managers much faster",
   "main": "packrat.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -9,8 +9,8 @@
   "bin": {
     "packrat": "lib/packrat-cli.js"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "an9eldust@yandex-team.ru",
+  "license": "WTFPL",
   "dependencies": {
     "coa": "^0.4.1",
     "execSync": "^1.0.2",
@@ -18,5 +18,15 @@
     "contimer": "^1.0.1",
     "moment": "^2.8.3",
     "moment-duration-format": "^1.3.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.yandex-team.ru:an9eldust/packrat.git"
+  },
+  "keywords": [
+    "npm",
+    "bower",
+    "package",
+    "manager"
+  ]
 }
