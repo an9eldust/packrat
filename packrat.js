@@ -4,7 +4,11 @@ var path = require('path'),
     util = require('util'),
     sh = require('execSync'),
     messages = require('./lib/messages'),
+    timer = require('contimer'),
+    moment = require('moment'),
     PackratStorage = require('./lib/storage');
+
+require('moment-duration-format');
 
 /**
  * Конструктор packrat-установки пакетов
@@ -39,6 +43,7 @@ function Packrat(opts) {
 
 Packrat.prototype.initInstallDefaults = function() {
     this.installLog = '';
+    this.installTime = 0;
 };
 
 Packrat.prototype.initStorage = function() {
@@ -95,7 +100,10 @@ Packrat.prototype.makeInstall = function() {
 Packrat.prototype.makeExport = function() {
     try {
         fs.statSync(this.localPackagesDir);
-        this.storage.exportToStorage(this.installLog);
+        this.storage.exportToStorage({
+            log: this.installLog,
+            time: this.installTime
+        });
     }
     catch (e) {
         this.log(messages.EXPORT_IMPOSSIBLE(this.localPackagesDir));
@@ -138,19 +146,39 @@ Packrat.prototype.makeClean = function() {
 Packrat.prototype.makeInfo = function() {
     this.log('Storage path:', this.storage.instancePath);
     this.log('Storage status:', this.storage.getStatus());
+    this.log('Installation time:', this.formatDuration(this.storage.getInstallTime()));
     this.log('Times storage was imported:', this.storage.getImportCounter());
+    this.log('Mean import time:', this.formatDuration(this.storage.getMeanImportTime()));
+    this.log('Mean shaved time:', this.formatDuration(this.storage.getShavedTime()));
     this.log('Install command: `%s`', this.installCommand);
     this.log('Local packages directory:', this.localPackagesDir);
     this.log('Package declaration file:', this.sourceFile);
 };
 
 /**
+ * Форматирует количество миллисекунд в строку вида "[X hrs, ][Y min, ]Z sec".
+ * Если в качестве duration передана строка, она же и будет возвращена без всякого форматирования.
+ * @param {Number|String} duration
+ * @returns {String}
+ */
+Packrat.prototype.formatDuration = function(duration) {
+    if (typeof duration === 'number') {
+        return moment.duration(duration).format('h [hrs], m [min], s [sec]');
+    }
+    else {
+        return duration;
+    }
+};
+
+/**
  * Обычная долгая установка пакетов при помощи пакетного менеджера.
  */
 Packrat.prototype.realInstall = function() {
+    timer.start(this, 'realInstall');
+
     this.log(messages.USUAL_INSTALL());
-    this.installLog =
-        this.runCommand(this.installCommand).stdout;
+    this.installLog = this.runCommand(this.installCommand).stdout;
+    this.installTime = timer.stop(this, 'realInstall').time;
 };
 
 /**
@@ -222,7 +250,7 @@ Packrat.prototype.runCommand = function() {
  */
 Packrat.prototype.log = function() {
     var logMessages = Array.prototype.slice.call(arguments).filter(function(message) {
-        return message && ! /^(\n)+$/.test(message);
+        return message !== '' && ! /^(\n)+$/.test(message);
     });
 
     if (logMessages.length) {
