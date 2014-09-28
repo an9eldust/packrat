@@ -17,6 +17,7 @@ var path = require('path'),
  * @param {Boolean} opts.force Флаг про то, использовать ли форсированную установку
  * (перед ней будут удалены кэш и локальная директория с пакетами)
  * @param {Boolean} opts.verbose Флаг про вербозность
+ * @param {Boolean} opts.info Флаг про то, нужно ли в конце установки вывести общую информацию
  * @constructor
  */
 function Packrat(opts) {
@@ -24,6 +25,7 @@ function Packrat(opts) {
 
     this.force = opts.force;
     this.verbose = opts.verbose;
+    this.info = opts.info;
 
     this.packageManager = opts.packageManager;
     this.installCommand = opts.installCommand;
@@ -110,7 +112,10 @@ Packrat.prototype.makeImport = function() {
     if (this.storage.getStatus() === this.storage.status.READY) {
         this.storage.importFromStorage();
         this.runCommand('cat %s', this.storage.installLogPath);
-        // @todo makeInfo
+
+        if (this.info) {
+            this.makeInfo();
+        }
     }
     else {
         this.log(messages.IMPORT_IMPOSSIBLE(this.storage.instancePath));
