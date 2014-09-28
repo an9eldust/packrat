@@ -2,7 +2,8 @@ var path = require('path'),
     fs = require('fs'),
     crypto = require('crypto'),
     util = require('util'),
-    sh = require('execSync');
+    sh = require('execSync'),
+    PackratStorage = require('./lib/storage');
 
 /**
  * Конструктор packrat-установки пакетов
@@ -17,25 +18,35 @@ var path = require('path'),
  * @constructor
  */
 function Packrat(opts) {
+    process.on('uncaughtException', this.onError.bind(this));
+
     this.force = opts.force;
 
     this.packageManager = opts.packageManager;
     this.installCommand = opts.installCommand;
     this.sourceFile = opts.sourceFile;
-    this.packageDir = opts.directory;
-    this.sourceHash = this.createSourceHash();
-
+    this.localPackagesDir = opts.directory;
     this.storageRoot = opts.storageRoot;
-    this.storagePath = path.join(this.storageRoot, this.packageManager, this.sourceHash);
-    this.storageModulesPath = path.join(this.storagePath, this.sourceHash);
-    this.storageLogPath = path.join(this.storagePath, 'install.log');
-    this.storageImportCounterPath = path.join(this.storagePath, 'counter');
-    this.setStorageStatus();
 
-    this.installLog = '';
-
-    process.on('uncaughtException', this.onError.bind(this));
+    this.initInstallDefaults();
+    this.initStorage();
 }
+
+Packrat.prototype.initInstallDefaults = function() {
+    this.installLog = '';
+};
+
+Packrat.prototype.initStorage = function() {
+    this.storage = new PackratStorage({
+        localPackagesDir: this.localPackagesDir,
+        rootPath: path.join(this.storageRoot, this.packageManager),
+        instancePath: path.join(this.storageRoot, this.packageManager, this.createSourceHash())
+    });
+
+    this.storage.setRunner(function() {
+        this.runCommand.apply(this, arguments);
+    }.bind(this));
+};
 
 /**
  * Устанавливает пакеты.
@@ -47,25 +58,26 @@ function Packrat(opts) {
  */
 Packrat.prototype.makeInstall = function() {
     if (this.force) {
-        this.forceInstall();
-        return;
+        this.storage.clean();
+        this.runCommand('rm -rf %s', this.localPackagesDir);
     }
 
-    switch (this.storageStatus) {
-        case this.status.AWAIT :
-            this.log(this.messages.AWAIT, this.sourceFile);
+    switch (this.storage.getStatus()) {
+        case this.storage.status.PROGRESS :
+            this.log('@todo PROGRESS');
             this.realInstall();
             break;
 
-        case this.status.EMPTY :
-            this.log(this.messages.EMPTY);
-            this.createTmpFile();
+        case this.storage.status.EMPTY :
+            this.log('@todo EMPTY');
+            this.isProgress = true;
+            this.storage.createTmpFile();
             this.realInstall();
             this.makeExport();
             break;
 
-        case this.status.READY :
-            this.log(this.messages.READY);
+        case this.storage.status.READY :
+            this.log('@todo READY');
             this.makeImport();
             break;
     }
@@ -76,14 +88,14 @@ Packrat.prototype.makeInstall = function() {
  * Также копирует туда лог установки и создает файл со счетчиком установок из кэша.
  */
 Packrat.prototype.makeExport = function() {
-    this.runCommand('rm -f %s', this.storagePath);
-    this.runCommand('mkdir -p', this.storagePath);
-
-    this.runCommand('cp -Tr %s %s', this.packageDir, this.storageModulesPath);
-    this.runCommand('touch %s %s', this.storageImportCounterPath, this.storageLogPath);
-
-    fs.writeFileSync(this.storageImportCounterPath, '0');
-    fs.writeFileSync(this.storageLogPath, this.installLog);
+    try {
+        fs.statSync(this.localPackagesDir);
+        this.storage.exportToStorage(this.installLog);
+    }
+    catch (e) {
+        console.log('@todo EXPORT IMPOSSIBLE');
+        process.exit(1);
+    }
 };
 
 /**
@@ -92,9 +104,15 @@ Packrat.prototype.makeExport = function() {
  * Инкрементирует счетчик установок из кэша.
  */
 Packrat.prototype.makeImport = function() {
-    this.runCommand('cp -Tr %s %s', this.storageModulesPath, this.packageDir);
-    this.runCommand('echo; cat %s', this.storageLogPath);
-    this.updateImportCounter();
+    if (this.storage.getStatus() === this.storage.status.READY) {
+        this.storage.importFromStorage();
+        this.runCommand('echo; cat %s', this.storage.installLogPath);
+        // @todo makeInfo
+    }
+    else {
+        this.log('@todo IMPORT IMPOSSIBLE');
+        process.exit(1);
+    }
 };
 
 /**
@@ -102,7 +120,7 @@ Packrat.prototype.makeImport = function() {
  */
 Packrat.prototype.makeClean = function() {
     this.log('Cleaning storage files...');
-    this.runCommand('rm -rf %s', this.storagePath);
+    this.storage.clean();
 };
 
 /**
@@ -111,26 +129,13 @@ Packrat.prototype.makeClean = function() {
  */
 Packrat.prototype.makeInfo = function() {
     this.log();
-    this.log('Storage path:', this.storagePath);
-    this.log('Storage status:', this.storageStatus);
-    this.log('Times storage was imported:', this.getImportCounter());
+    this.log('Storage path:', this.storage.instancePath);
+    this.log('Storage status:', this.storage.getStatus());
+    this.log('Times storage was imported:', this.storage.getImportCounter());
     this.log('Install command: `%s`', this.installCommand);
-    this.log('Local packages directory:', this.packageDir);
+    this.log('Local packages directory:', this.localPackagesDir);
     this.log('Package declaration file:', this.sourceFile);
     this.log();
-};
-
-/**
- * Форсированная установка пакетов,
- * не обращающая внимания ни на наличие локальной директории, ни на наличие кэша.
- */
-Packrat.prototype.forceInstall = function() {
-    this.runCommand('rm -rf %s', this.packageDir);
-    this.makeClean();
-    this.setStorageStatus();
-
-    delete this.force;
-    this.makeInstall();
 };
 
 /**
@@ -140,27 +145,6 @@ Packrat.prototype.realInstall = function() {
     this.log('\nUsual packages installing takes a while (as you already know). Please wait!..\n');
     this.installLog =
         this.runCommand(this.installCommand).stdout;
-};
-
-/**
- * Выясняет текущее состояние кэша в хранилище (есть/нет/временный файл)
- * и устанавливает соответствующее свойство в инстанс.
- */
-Packrat.prototype.setStorageStatus = function() {
-    var stat;
-
-    try {
-        stat = fs.statSync(this.storagePath);
-        if (stat.isFile()) {
-            this.storageStatus = this.status.AWAIT;
-        }
-        else if (stat.isDirectory()) {
-            this.storageStatus = this.status.READY;
-        }
-    }
-    catch(e) {
-        this.storageStatus = this.status.EMPTY;
-    }
 };
 
 /**
@@ -180,59 +164,29 @@ Packrat.prototype.createSourceHash = function() {
     return hashSum.digest('hex');
 };
 
-/**
- * Создает в хранилище временный пустой файл,
- * сообщающий параллельным установкам, что в кэш скоро будут сложены пакеты.
- */
-Packrat.prototype.createTmpFile = function() {
-    this.runCommand('mkdir -p %s', path.dirname(this.storagePath));
-    this.runCommand('touch %s', this.storagePath);
-};
-
-/**
- * Инкрементирует счетчик установок из кэша.
- */
-Packrat.prototype.updateImportCounter = function() {
-    var counter = this.getImportCounter();
-
-    counter = parseInt(counter, 10) + 1;
-
-    fs.writeFileSync(this.storageImportCounterPath, String(counter));
-};
-
-/**
- * Возвращает текущее значение счетчика установок из кэша
- * @returns {String}
- */
-Packrat.prototype.getImportCounter = function() {
-    try {
-        return fs.readFileSync(this.storageImportCounterPath, 'utf8');
-    } catch(e) {
-        return 'n/a';
-    }
-};
-
 
 /**
  * Обработчик неожиданных ошибок, случившихся во время установки.
  * Если перед этим установщик успел положить в хранилище временный файл,
  * нужно его удалить, чтобы не сломать следующую установку.
  * @param err
+ * @param code
  */
-Packrat.prototype.onError = function(err) {
-    if (this.storageStatus === this.status.EMPTY) {
-        this.makeClean();
+Packrat.prototype.onError = function(err, code) {
+    if (this.isProgress) {
+        this.storage.deleteTmpFile();
     }
 
     console.error('Packrat unexpected error:', err.message);
-    process.exit(1);
+    process.exit(code || 1);
 };
 
 
 /**
- * Синхронно выполняет shell-команду,
- * логирует и возвращает ее вывод.
- * @returns {{stdout: string}|undefined}
+ * Синхронно выполняет shell-команду, логирует и возвращает ее вывод.
+ * Команда склеивается из строк-аргументов при помощи `util.format()`
+ * (это, например, означает, что в первой строке можно использовать плейсхолдеры).
+ * @returns {{stdout: string} | undefined}
  */
 Packrat.prototype.runCommand = function() {
     var command = util.format.apply(util, arguments),
@@ -247,38 +201,17 @@ Packrat.prototype.runCommand = function() {
     }
 
     if (result.code !== 0) {
-        this.onError();
-        console.error('ERROR:', util.format('`%s` command failed', command));
-        process.exit(result.code);
+        this.onError(new Error(util.format('`%s` command failed', command)), result.code);
     }
 
     return result;
 };
 
 /**
- * Логгер сообщений от установщика
+ * Логгер сообщений
  */
 Packrat.prototype.log = function() {
     console.log.apply(console, arguments);
-};
-
-
-/**
- * @see Packrat#messages
- */
-Packrat.prototype.status = {
-    'AWAIT': 'AWAIT',
-    'EMPTY': 'EMPTY',
-    'READY': 'READY'
-};
-
-Packrat.prototype.messages = {
-    AWAIT:  'Someone has already started installing with the same %s and is going to export.\n' +
-            'We should just install packages.',
-    EMPTY:  'Storage is empty: we will install packages the usual way' +
-            ' and then export installed to storage',
-    READY:  'Storage is ready to be imported.\n' +
-            'No install needed; we will just copy packages from storage to local directory.'
 };
 
 module.exports = Packrat;
