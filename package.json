@@ -1,6 +1,6 @@
 {
   "name": "packrat",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Makes installations with package managers much faster",
   "main": "packrat.js",
   "scripts": {
