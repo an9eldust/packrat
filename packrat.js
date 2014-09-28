@@ -3,6 +3,7 @@ var path = require('path'),
     crypto = require('crypto'),
     util = require('util'),
     sh = require('execSync'),
+    messages = require('./lib/messages'),
     PackratStorage = require('./lib/storage');
 
 /**
@@ -64,12 +65,12 @@ Packrat.prototype.makeInstall = function() {
 
     switch (this.storage.getStatus()) {
         case this.storage.status.PROGRESS :
-            this.log('@todo PROGRESS');
+            this.log(messages.INSTALL_PROGRESS(this.sourceFile));
             this.realInstall();
             break;
 
         case this.storage.status.EMPTY :
-            this.log('@todo EMPTY');
+            this.log(messages.INSTALL_EMPTY());
             this.isProgress = true;
             this.storage.createTmpFile();
             this.realInstall();
@@ -77,7 +78,7 @@ Packrat.prototype.makeInstall = function() {
             break;
 
         case this.storage.status.READY :
-            this.log('@todo READY');
+            this.log(messages.INSTALL_READY());
             this.makeImport();
             break;
     }
@@ -93,7 +94,7 @@ Packrat.prototype.makeExport = function() {
         this.storage.exportToStorage(this.installLog);
     }
     catch (e) {
-        console.log('@todo EXPORT IMPOSSIBLE');
+        this.log(messages.EXPORT_IMPOSSIBLE(this.localPackagesDir));
         process.exit(1);
     }
 };
@@ -106,11 +107,11 @@ Packrat.prototype.makeExport = function() {
 Packrat.prototype.makeImport = function() {
     if (this.storage.getStatus() === this.storage.status.READY) {
         this.storage.importFromStorage();
-        this.runCommand('echo; cat %s', this.storage.installLogPath);
+        this.runCommand('cat %s', this.storage.installLogPath);
         // @todo makeInfo
     }
     else {
-        this.log('@todo IMPORT IMPOSSIBLE');
+        this.log(messages.IMPORT_IMPOSSIBLE(this.storage.instancePath));
         process.exit(1);
     }
 };
@@ -119,7 +120,7 @@ Packrat.prototype.makeImport = function() {
  * Удаляет кэш из хранилища.
  */
 Packrat.prototype.makeClean = function() {
-    this.log('Cleaning storage files...');
+    this.log(messages.CLEANING_STORAGE_FILES(this.storage.instancePath));
     this.storage.clean();
 };
 
@@ -128,21 +129,19 @@ Packrat.prototype.makeClean = function() {
  * путь до кэша, само его наличие, количество установок из него, etc.
  */
 Packrat.prototype.makeInfo = function() {
-    this.log();
     this.log('Storage path:', this.storage.instancePath);
     this.log('Storage status:', this.storage.getStatus());
     this.log('Times storage was imported:', this.storage.getImportCounter());
     this.log('Install command: `%s`', this.installCommand);
     this.log('Local packages directory:', this.localPackagesDir);
     this.log('Package declaration file:', this.sourceFile);
-    this.log();
 };
 
 /**
  * Обычная долгая установка пакетов при помощи пакетного менеджера.
  */
 Packrat.prototype.realInstall = function() {
-    this.log('\nUsual packages installing takes a while (as you already know). Please wait!..\n');
+    this.log(messages.USUAL_INSTALL());
     this.installLog =
         this.runCommand(this.installCommand).stdout;
 };
@@ -208,10 +207,18 @@ Packrat.prototype.runCommand = function() {
 };
 
 /**
- * Логгер сообщений
+ * Логгер сообщений.
+ * Принимает произвольное количество строк в качестве аргументов,
+ * выбрасывая из них пустые или содержащие только переводы строк.
  */
 Packrat.prototype.log = function() {
-    console.log.apply(console, arguments);
+    var logMessages = Array.prototype.slice.call(arguments).filter(function(message) {
+        return message && ! /^(\n)+$/.test(message);
+    });
+
+    if (logMessages.length) {
+        console.log.apply(console, logMessages);
+    }
 };
 
 module.exports = Packrat;
